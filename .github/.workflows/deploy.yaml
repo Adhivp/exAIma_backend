@@ -1,0 +1,65 @@
+name: Deploy to Azure VM
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      
+    - name: Setup SSH
+      uses: webfactory/ssh-agent@v0.8.0
+      with:
+        ssh-private-key: ${{ secrets.AZURE_VM_SSH_KEY }}
+        
+    - name: Deploy to Azure VM
+      run: |
+        # Add VM host key to known hosts
+        ssh-keyscan -H ${{ secrets.AZURE_VM_HOST }} >> ~/.ssh/known_hosts
+        
+        # SSH into VM and execute commands
+        ssh ${{ secrets.AZURE_VM_USERNAME }}@${{ secrets.AZURE_VM_HOST }} << 'EOF'
+          # Kill existing process if running
+          PROCESS_PID=$(ps aux | grep "python3 main.py" | grep -v grep | awk '{print $2}')
+          if [ ! -z "$PROCESS_PID" ]; then
+            echo "Stopping existing process with PID: $PROCESS_PID"
+            kill -9 $PROCESS_PID
+          fi
+          
+          # Navigate to project directory (create if doesn't exist)
+          mkdir -p ~/exAIma_backend
+          cd ~/exAIma_backend
+          
+          # Clean up existing files
+          rm -rf ./*
+        EOF
+        
+        # Copy project files to VM
+        scp -r ./* ${{ secrets.AZURE_VM_USERNAME }}@${{ secrets.AZURE_VM_HOST }}:~/exAIma_backend/
+        
+        # Setup environment and start application
+        ssh ${{ secrets.AZURE_VM_USERNAME }}@${{ secrets.AZURE_VM_HOST }} << 'EOF'
+          cd ~/exAIma_backend
+          
+          # Create and activate virtual environment
+          python3 -m venv venv
+          source venv/bin/activate
+          
+          # Install dependencies
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          
+          # Start application in background
+          nohup python3 main.py > app.log 2>&1 &
+          
+          # Verify process is running
+          ps aux | grep "python3 main.py" | grep -v grep
+          
+          echo "Deployment completed"
+        EOF

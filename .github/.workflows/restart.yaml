@@ -1,0 +1,48 @@
+name: Restart Application on Azure VM
+
+on:
+  workflow_dispatch:
+
+jobs:
+  restart:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Setup SSH
+      uses: webfactory/ssh-agent@v0.8.0
+      with:
+        ssh-private-key: ${{ secrets.AZURE_VM_SSH_KEY }}
+        
+    - name: Restart Application
+      run: |
+        # Add VM host key to known hosts
+        ssh-keyscan -H ${{ secrets.AZURE_VM_HOST }} >> ~/.ssh/known_hosts
+        
+        # SSH into VM and restart the application
+        ssh ${{ secrets.AZURE_VM_USERNAME }}@${{ secrets.AZURE_VM_HOST }} << 'EOF'
+          # Kill existing process if running
+          PROCESS_PID=$(ps aux | grep "python3 main.py" | grep -v grep | awk '{print $2}')
+          if [ ! -z "$PROCESS_PID" ]; then
+            echo "Stopping existing process with PID: $PROCESS_PID"
+            kill -9 $PROCESS_PID
+          else
+            echo "No existing process found"
+          fi
+          
+          # Navigate to project directory
+          cd ~/exAIma_backend
+          
+          # Create and activate virtual environment if it doesn't exist
+          if [ ! -d "venv" ]; then
+            python3 -m venv venv
+          fi
+          source venv/bin/activate
+          
+          # Start application in background
+          nohup python3 main.py > app.log 2>&1 &
+          
+          # Verify process is running
+          ps aux | grep "python3 main.py" | grep -v grep
+          
+          echo "Application restarted"
+        EOF
