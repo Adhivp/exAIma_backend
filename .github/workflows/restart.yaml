@@ -1,6 +1,10 @@
-name: Restart Application on Azure VM
+name: Update and Restart Application on Azure VM
 
 on:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - 'requirements.txt'  # Don't trigger on requirements.txt changes (deploy.yaml handles those)
   workflow_dispatch:
 
 jobs:
@@ -13,18 +17,20 @@ jobs:
       with:
         ssh-private-key: ${{ secrets.AZURE_VM_SSH_KEY }}
         
-    - name: Restart Application
+    - name: Update Code and Restart Application
       run: |
         # Add VM host key to known hosts
         ssh-keyscan -H ${{ secrets.AZURE_VM_HOST }} >> ~/.ssh/known_hosts
         
         # SSH into VM and restart the application
         ssh ${{ secrets.AZURE_VM_USERNAME }}@${{ secrets.AZURE_VM_HOST }} << 'EOF'
-          # Kill existing process if running
-          PROCESS_PID=$(ps aux | grep "python3 main.py" | grep -v grep | awk '{print $2}')
+          # More robust process detection
+          echo "Checking for existing process..."
+          PROCESS_PID=$(pgrep -f "python3 main.py" || echo "")
           if [ ! -z "$PROCESS_PID" ]; then
             echo "Stopping existing process with PID: $PROCESS_PID"
-            kill -9 $PROCESS_PID
+            kill -9 $PROCESS_PID || echo "Failed to kill process"
+            sleep 2
           else
             echo "No existing process found"
           fi
@@ -32,34 +38,42 @@ jobs:
           # Navigate to project directory
           cd ~/exAIma_backend
           
-          # Ensure required packages are installed
-          echo "Checking required system packages..."
-          if ! dpkg -l | grep -qw python3-venv; then
-            echo "Installing python3-venv package..."
-            sudo apt update
-            sudo apt install -y python3-venv python3-pip
+          # Pull latest changes from git
+          echo "Pulling latest code changes..."
+          if [ -d ".git" ]; then
+            git fetch origin main
+            git reset --hard origin/main
+            echo "Latest code pulled successfully"
+          else
+            echo "ERROR: Git repository not initialized"
+            exit 1
           fi
           
-          # Create and activate virtual environment if it doesn't exist
-          if [ ! -d "venv" ]; then
+          # Activate virtual environment
+          echo "Activating virtual environment..."
+          if [ -d "venv" ]; then
+            source venv/bin/activate
+          else
             echo "Creating new virtual environment..."
             python3 -m venv venv
-          fi
-          source venv/bin/activate
-          
-          # Ensure dependencies are installed
-          echo "Checking dependencies..."
-          python3 -m pip install --upgrade pip
-          if [ -f "requirements.txt" ]; then
+            source venv/bin/activate
+            python3 -m pip install --upgrade pip
             python3 -m pip install -r requirements.txt
           fi
           
           # Start application in background
           echo "Starting application..."
+          cd ~/exAIma_backend
           nohup python3 main.py > app.log 2>&1 &
           
           # Verify process is running
-          ps aux | grep "python3 main.py" | grep -v grep
+          sleep 2
+          if pgrep -f "python3 main.py" > /dev/null; then
+            echo "Application started successfully with PID: $(pgrep -f 'python3 main.py')"
+          else
+            echo "WARNING: Application may not have started properly"
+            tail -n 20 app.log
+          fi
           
-          echo "Application restarted successfully"
+          echo "Application updated and restarted successfully"
         EOF

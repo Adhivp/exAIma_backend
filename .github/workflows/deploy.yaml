@@ -3,6 +3,8 @@ name: Deploy to Azure VM
 on:
   push:
     branches: [ main ]
+    paths:
+      - 'requirements.txt'  # Only trigger on requirements.txt changes
   workflow_dispatch:
 
 jobs:
@@ -22,11 +24,15 @@ jobs:
         
         # SSH into VM and execute commands
         ssh ${{ secrets.AZURE_VM_USERNAME }}@${{ secrets.AZURE_VM_HOST }} << 'EOF'
-          # Kill existing process if running
-          PROCESS_PID=$(ps aux | grep "python3 main.py" | grep -v grep | awk '{print $2}')
+          # More robust process detection
+          echo "Checking for existing process..."
+          PROCESS_PID=$(pgrep -f "python3 main.py" || echo "")
           if [ ! -z "$PROCESS_PID" ]; then
             echo "Stopping existing process with PID: $PROCESS_PID"
-            kill -9 $PROCESS_PID
+            kill -9 $PROCESS_PID || echo "Failed to kill process"
+            sleep 2
+          else
+            echo "No existing process found"
           fi
           
           # Navigate to project directory (create if needed)
@@ -42,9 +48,9 @@ jobs:
           
           # Clean any local changes and pull latest code
           echo "Pulling latest changes..."
+          git fetch origin main
           git clean -fd
-          git reset --hard
-          git pull origin main || echo "Failed to pull, continuing anyway"
+          git reset --hard origin/main
           
           # Ensure required packages are installed
           echo "Installing required system packages..."
@@ -53,7 +59,7 @@ jobs:
           
           # Create and activate virtual environment
           echo "Setting up Python virtual environment..."
-          python3 -m venv venv
+          python3 -m venv venv || echo "Failed to create venv, attempting to continue"
           source venv/bin/activate
           
           # Install dependencies
@@ -63,10 +69,17 @@ jobs:
           
           # Start application in background
           echo "Starting application..."
+          cd ~/exAIma_backend
           nohup python3 main.py > app.log 2>&1 &
           
           # Verify process is running
-          ps aux | grep "python3 main.py" | grep -v grep
+          sleep 2
+          if pgrep -f "python3 main.py" > /dev/null; then
+            echo "Application started successfully with PID: $(pgrep -f 'python3 main.py')"
+          else
+            echo "WARNING: Application may not have started properly"
+            tail -n 20 app.log
+          fi
           
           echo "Deployment completed successfully"
         EOF
