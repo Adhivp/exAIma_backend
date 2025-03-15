@@ -24,15 +24,38 @@ jobs:
         
         # SSH into VM and restart the application
         ssh ${{ secrets.AZURE_VM_USERNAME }}@${{ secrets.AZURE_VM_HOST }} << 'EOF'
-          # More robust process detection
-          echo "Checking for existing process..."
-          PROCESS_PID=$(pgrep -f "python3 main.py" || echo "")
-          if [ ! -z "$PROCESS_PID" ]; then
-            echo "Stopping existing process with PID: $PROCESS_PID"
-            kill -9 $PROCESS_PID || echo "Failed to kill process"
-            sleep 2
+          # Enhanced process detection - check all possible methods
+          echo "Checking for existing processes..."
+          
+          # 1. Check using pgrep
+          PGREP_PIDS=$(pgrep -f "python3 main.py" || echo "")
+          
+          # 2. Check using ps and grep
+          PS_PIDS=$(ps aux | grep "python3 main.py" | grep -v grep | awk '{print $2}' || echo "")
+          
+          # 3. Check ports that might be in use (adjust port as needed)
+          PORT_PIDS=$(lsof -i:8000 -t 2>/dev/null || echo "")
+          
+          # Combine all PIDs, remove duplicates, and filter out empty strings
+          ALL_PIDS=$(echo "$PGREP_PIDS $PS_PIDS $PORT_PIDS" | tr ' ' '\n' | grep -v "^$" | sort -u)
+          
+          if [ ! -z "$ALL_PIDS" ]; then
+            echo "Found existing process(es) with PIDs: $ALL_PIDS"
+            for PID in $ALL_PIDS; do
+              echo "Stopping process with PID: $PID"
+              kill -9 $PID || echo "Failed to kill process $PID"
+            done
+            sleep 3
           else
-            echo "No existing process found"
+            echo "No existing processes found"
+          fi
+          
+          # Also ensure the port is free before starting
+          echo "Checking if port is in use..."
+          if lsof -i:8000 -t &>/dev/null; then
+            echo "Port 8000 is still in use! Forcibly releasing port..."
+            sudo fuser -k 8000/tcp || echo "Failed to release port"
+            sleep 2
           fi
           
           # Navigate to project directory
@@ -66,14 +89,24 @@ jobs:
           cd ~/exAIma_backend
           nohup python3 main.py > app.log 2>&1 &
           
-          # Verify process is running
-          sleep 2
-          if pgrep -f "python3 main.py" > /dev/null; then
-            echo "Application started successfully with PID: $(pgrep -f 'python3 main.py')"
+          # Verify process is running more thoroughly
+          sleep 3
+          RUNNING_PID=$(pgrep -f "python3 main.py" || echo "")
+          
+          if [ ! -z "$RUNNING_PID" ]; then
+            echo "Application started successfully with PID: $RUNNING_PID"
+            # Check if the port is actually in use by our process
+            if lsof -i:8000 -t &>/dev/null; then
+              echo "Port 8000 is active and in use. Application is running correctly."
+            else
+              echo "WARNING: Application started but may not be listening on port 8000."
+            fi
           else
-            echo "WARNING: Application may not have started properly"
-            tail -n 20 app.log
+            echo "ERROR: Application failed to start properly"
+            echo "--- Last 30 lines of app.log ---"
+            tail -n 30 app.log
+            echo "--------------------------------"
           fi
           
-          echo "Application updated and restarted successfully"
+          echo "Application update process completed"
         EOF
