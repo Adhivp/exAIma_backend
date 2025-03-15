@@ -11,6 +11,8 @@ from app.exam.schemas import (
 )
 from typing import List, Dict, Any
 from datetime import datetime, timedelta
+import re
+from app.config import supabase
 
 router = APIRouter(prefix="/exams", tags=["Exams"])
 
@@ -20,16 +22,61 @@ def convert_to_ist(utc_datetime_str):
     if utc_datetime_str is None:
         return None
         
-    # Convert string to datetime object
+    # If already a datetime object, just add the IST offset
+    if isinstance(utc_datetime_str, datetime):
+        ist_datetime = utc_datetime_str + timedelta(hours=5, minutes=30)
+        return ist_datetime.isoformat()
+    
+    # If it's a string, handle different formats
     if isinstance(utc_datetime_str, str):
-        utc_datetime = datetime.fromisoformat(utc_datetime_str.replace('Z', '+00:00'))
+        try:
+            # Try direct parsing first
+            utc_datetime = datetime.fromisoformat(utc_datetime_str)
+        except ValueError:
+            try:
+                # Handle 'Z' timezone indicator
+                if utc_datetime_str.endswith('Z'):
+                    utc_datetime_str = utc_datetime_str.replace('Z', '+00:00')
+                
+                # Handle microsecond precision issues
+                # Extract parts of the timestamp
+                match = re.match(
+                    r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})\.?(\d*)([+-]\d{2}:?\d{2})?', 
+                    utc_datetime_str
+                )
+                
+                if not match:
+                    # If no match, return the original string
+                    return utc_datetime_str
+                    
+                base, microseconds, timezone = match.groups()
+                
+                # Standardize the microsecond part (truncate to 6 digits if needed)
+                if microseconds:
+                    microseconds = microseconds[:6].ljust(6, '0')
+                    timestamp = f"{base}.{microseconds}"
+                else:
+                    timestamp = base
+                
+                # Add timezone if present
+                if timezone:
+                    # Ensure timezone has a colon
+                    if len(timezone) == 5:  # format +0000
+                        timezone = f"{timezone[:3]}:{timezone[3:]}"
+                    timestamp += timezone
+                
+                utc_datetime = datetime.fromisoformat(timestamp)
+            except Exception:
+                # If parsing fails, return the original string
+                return utc_datetime_str
     else:
-        utc_datetime = utc_datetime_str
+        # If not a string or datetime, return as is
+        return utc_datetime_str
         
     # Add 5 hours and 30 minutes to convert to IST
     ist_datetime = utc_datetime + timedelta(hours=5, minutes=30)
     
-    # Return as string in the same format
+    # Return as string in ISO format
     return ist_datetime.isoformat()
 
 @router.get("/", response_model=List[ExamResponse])
