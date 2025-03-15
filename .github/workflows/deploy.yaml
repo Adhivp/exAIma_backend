@@ -47,19 +47,27 @@ jobs:
         ssh ${{ secrets.AZURE_VM_USERNAME }}@${{ secrets.AZURE_VM_HOST }} << 'EOF'
           cd ~/exAIma_backend
           
+          # Ensure required packages are installed
+          echo "Installing required system packages..."
+          sudo apt update
+          sudo apt install -y python3-venv python3-pip
+          
           # Create and activate virtual environment
+          echo "Setting up Python virtual environment..."
           python3 -m venv venv
           source venv/bin/activate
           
           # Install dependencies
-          pip install --upgrade pip
-          pip install -r requirements.txt
+          echo "Installing Python dependencies..."
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -r requirements.txt
           
           # Start application in background
+          echo "Starting application..."
           nohup python3 main.py > app.log 2>&1 &
           
           # Verify process is running
           ps aux | grep "python3 main.py" | grep -v grep
           
-          echo "Deployment completed"
+          echo "Deployment completed successfully"
         EOF

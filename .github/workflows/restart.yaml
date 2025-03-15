@@ -32,17 +32,34 @@ jobs:
           # Navigate to project directory
           cd ~/exAIma_backend
           
+          # Ensure required packages are installed
+          echo "Checking required system packages..."
+          if ! dpkg -l | grep -qw python3-venv; then
+            echo "Installing python3-venv package..."
+            sudo apt update
+            sudo apt install -y python3-venv python3-pip
+          fi
+          
           # Create and activate virtual environment if it doesn't exist
           if [ ! -d "venv" ]; then
+            echo "Creating new virtual environment..."
             python3 -m venv venv
           fi
           source venv/bin/activate
           
+          # Ensure dependencies are installed
+          echo "Checking dependencies..."
+          python3 -m pip install --upgrade pip
+          if [ -f "requirements.txt" ]; then
+            python3 -m pip install -r requirements.txt
+          fi
+          
           # Start application in background
+          echo "Starting application..."
           nohup python3 main.py > app.log 2>&1 &
           
           # Verify process is running
           ps aux | grep "python3 main.py" | grep -v grep
           
-          echo "Application restarted"
+          echo "Application restarted successfully"
         EOF
