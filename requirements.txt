@@ -1,2 +1,9 @@
 fastapi
 uvicorn
+pydantic
+python-dotenv
+supabase
+PyJWT
+pydantic[email]
+python-multipart
+bcrypt
