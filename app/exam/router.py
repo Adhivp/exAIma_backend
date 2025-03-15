@@ -40,41 +40,59 @@ async def submit_exam(
     """
     Submit an exam for evaluation and get results
     """
-    result = await ExamService.evaluate_exam(
-        user=current_user,
-        exam_id=request.exam_id,
-        user_answers=[answer.dict() for answer in request.answers]
-    )
-    
-    # Format the response according to the schema
-    response = {
-        "id": result.id,
-        "user_id": result.user_id,
-        "exam_id": result.exam_id,
-        "exam_name": result.exam_name,
-        "total_marks": result.total_marks,
-        "obtained_marks": result.obtained_marks,
-        "correct_answers": result.correct_answers,
-        "wrong_answers": result.wrong_answers,
-        "percentage": round((result.obtained_marks / result.total_marks) * 100, 2) if result.total_marks > 0 else 0,
-        "completed_at": result.completed_at,
-        "question_results": []
-    }
-    
-    # Add question results
-    for q_response in result.question_responses:
-        question_result = {
-            "question_id": q_response["question_id"],
-            "question_text": q_response["question_text"],
-            "selected_option": q_response["selected_option"] or "",
-            "correct_option": q_response["correct_option"],
-            "is_correct": q_response["is_correct"],
-            "marks": q_response["marks"],
-            "options": q_response["options"]
+    try:
+        # Convert the request.answers to list of dicts with string IDs
+        answers = []
+        for answer in request.answers:
+            answers.append({
+                "question_id": answer.question_id,  # Keep as string for now
+                "selected_option": answer.selected_option
+            })
+        
+        result = await ExamService.evaluate_exam(
+            user=current_user,
+            exam_id=request.exam_id,  # Keep as string for now
+            user_answers=answers
+        )
+        
+        # Format the response according to the schema
+        # IMPORTANT: Convert all IDs to strings for the response
+        response = {
+            "id": str(result.id),  # Convert to string
+            "user_id": str(result.user_id),  # Convert to string
+            "exam_id": str(result.exam_id),  # Convert to string
+            "exam_name": result.exam_name,
+            "total_marks": result.total_marks,
+            "obtained_marks": result.obtained_marks,
+            "correct_answers": result.correct_answers,
+            "wrong_answers": result.wrong_answers,
+            "percentage": round((result.obtained_marks / result.total_marks) * 100, 2) if result.total_marks > 0 else 0,
+            "completed_at": result.completed_at,
+            "question_results": []
         }
-        response["question_results"].append(question_result)
+        
+        # Add question results - convert question_id to string
+        for q_response in result.question_responses:
+            question_result = {
+                "question_id": str(q_response["question_id"]),  # Convert to string
+                "question_text": q_response["question_text"],
+                "selected_option": q_response["selected_option"] or "",
+                "correct_option": q_response["correct_option"],
+                "is_correct": q_response["is_correct"],
+                "marks": q_response["marks"],
+                "options": q_response["options"]
+            }
+            response["question_results"].append(question_result)
+        
+        return response
     
-    return response
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error submitting exam: {str(e)}"
+        )
 
 @router.get("/history/me", response_model=List[Dict[str, Any]])
 async def get_my_exam_history(current_user: User = Security(get_current_user)):
@@ -82,6 +100,7 @@ async def get_my_exam_history(current_user: User = Security(get_current_user)):
     Get the exam history for the current user
     """
     return await ExamService.get_user_exam_history(current_user.id)
+
 
 @router.get("/history/{exam_id}", response_model=Dict[str, Any])
 async def get_exam_history(

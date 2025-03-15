@@ -60,13 +60,13 @@ class ExamWithQuestions(ExamResponse):
 
 
 class UserAnswer(BaseModel):
-    question_id: str = Field(..., description="The ID of the question")
-    selected_option: str = Field(..., pattern="^[A-D]$", description="The option selected by the user (A, B, C, or D)")
+    question_id: str = Field(..., description="ID of the question being answered")
+    selected_option: str = Field(..., pattern="^[A-D]$", description="Selected option (A, B, C, or D)")
 
 
 class SubmitExamRequest(BaseModel):
     exam_id: str = Field(..., description="ID of the exam being submitted")
-    answers: List[UserAnswer] = Field(..., description="List of answers provided by the user")
+    answers: List[UserAnswer] = Field(..., description="List of user answers for each question")
 
 
 class QuestionResultResponse(BaseModel):

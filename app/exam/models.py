@@ -145,17 +145,20 @@ class ExamResult:
         correct_answers: int,
         wrong_answers: int,
         question_responses: List[Dict[str, Any]] = None,
-        completed_at: datetime = None
+        completed_at: datetime = None,
+        exam_name: str = None
     ):
-        self.id = str(id) if id is not None else None
-        self.user_id = str(user_id) if user_id is not None else None
-        self.exam_id = str(exam_id) if exam_id is not None else None
+        # For ID fields, keep integers as integers for database operations
+        self.id = id  # Keep as integer for database
+        self.user_id = user_id  # This can be a UUID string
+        self.exam_id = exam_id  # Keep as integer for database
         self.total_marks = total_marks
         self.obtained_marks = obtained_marks
         self.correct_answers = correct_answers
         self.wrong_answers = wrong_answers
         self.question_responses = question_responses or []
         self.completed_at = completed_at
+        self.exam_name = exam_name  # Added to store exam name
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any], question_responses: List[Dict[str, Any]] = None) -> "ExamResult":
@@ -171,7 +174,8 @@ class ExamResult:
             correct_answers=data.get("correct_answers"),
             wrong_answers=data.get("wrong_answers"),
             question_responses=question_responses,
-            completed_at=data.get("completed_at")
+            completed_at=data.get("completed_at"),
+            exam_name=data.get("exam_name")
         )
     
     def to_dict(self, include_responses: bool = False) -> Dict[str, Any]:

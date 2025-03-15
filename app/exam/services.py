@@ -82,13 +82,16 @@ class ExamService:
             )
     
     @staticmethod
-    async def evaluate_exam(user: User, exam_id: str, user_answers: List[Dict[str, str]]) -> ExamResult:
+    async def evaluate_exam(user: User, exam_id: str, user_answers: List[Dict[str, Any]]) -> ExamResult:
         """
         Evaluate an exam based on user answers and store the results
         """
         try:
+            # Convert exam_id to integer for database query
+            exam_id_int = int(exam_id)
+            
             # Get exam details
-            exam_result = supabase.table("exams").select("*").eq("id", exam_id).execute()
+            exam_result = supabase.table("exams").select("*").eq("id", exam_id_int).execute()
             
             if not exam_result.data:
                 raise HTTPException(
@@ -99,7 +102,7 @@ class ExamService:
             exam_data = exam_result.data[0]
             
             # Get all questions with correct answers
-            questions_result = supabase.table("questions").select("*").eq("exam_id", exam_id).execute()
+            questions_result = supabase.table("questions").select("*").eq("exam_id", exam_id_int).execute()
             
             if not questions_result.data:
                 raise HTTPException(
@@ -108,10 +111,19 @@ class ExamService:
                 )
             
             # Create a dictionary of questions by ID for easy lookup
+            # Use integer IDs as keys
             questions_by_id = {q["id"]: q for q in questions_result.data}
             
-            # Convert user_answers to a dictionary for easy lookup
-            user_answers_dict = {a["question_id"]: a["selected_option"] for a in user_answers}
+            # Convert user_answers question_ids to integers for lookup
+            user_answers_dict = {}
+            for answer in user_answers:
+                try:
+                    # Convert question_id to integer
+                    question_id_int = int(answer.get("question_id"))
+                    user_answers_dict[question_id_int] = answer.get("selected_option")
+                except ValueError:
+                    # Skip invalid question IDs
+                    continue
             
             # Initialize evaluation variables
             total_marks = 0
@@ -122,7 +134,8 @@ class ExamService:
             
             # Evaluate each question
             for q_id, question in questions_by_id.items():
-                total_marks += question["marks"]
+                marks = question.get("marks", 1) or 1
+                total_marks += marks
                 
                 # Check if user answered this question
                 if q_id in user_answers_dict:
@@ -130,7 +143,7 @@ class ExamService:
                     is_correct = user_option == question["correct_option"]
                     
                     if is_correct:
-                        obtained_marks += question["marks"]
+                        obtained_marks += marks
                         correct_answers += 1
                     else:
                         wrong_answers += 1
@@ -142,12 +155,12 @@ class ExamService:
                 
                 # Prepare question response data
                 question_response = {
-                    "question_id": q_id,
+                    "question_id": q_id,  # Keep as integer for database
                     "question_text": question["question_text"],
                     "selected_option": user_option,
                     "correct_option": question["correct_option"],
                     "is_correct": is_correct,
-                    "marks": question["marks"],
+                    "marks": marks,
                     "options": {
                         "A": question["option_a"],
                         "B": question["option_b"],
@@ -158,14 +171,12 @@ class ExamService:
                 
                 question_responses.append(question_response)
             
-            # Create a result ID
-            result_id = str(uuid.uuid4())
-            
-            # Prepare result data for database
+            # Insert result with auto-incrementing ID
+            # Note: Let the database assign the ID automatically for integer columns
             result_data = {
-                "id": result_id,
-                "user_id": user.id,
-                "exam_id": exam_id,
+                # Omit the 'id' field to let the database assign it automatically
+                "user_id": user.id,  # This is a UUID, matches the user_id column type
+                "exam_id": exam_id_int,  # Integer for the exam_id column
                 "total_marks": total_marks,
                 "obtained_marks": obtained_marks,
                 "correct_answers": correct_answers,
@@ -173,27 +184,45 @@ class ExamService:
                 "completed_at": datetime.now().isoformat()
             }
             
-            # Store result in database
-            supabase.table("user_exam_results").insert(result_data).execute()
+            # Store result in database and get the generated ID
+            result_insert = supabase.table("user_exam_results").insert(result_data).execute()
+            
+            # Get the auto-generated result ID
+            if not result_insert.data or len(result_insert.data) == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to insert exam result"
+                )
+            
+            result_id = result_insert.data[0]["id"]  # Get the auto-generated integer ID
             
             # Store question responses in database
             for response in question_responses:
                 response_data = {
-                    "id": str(uuid.uuid4()),
-                    "result_id": result_id,
-                    "question_id": response["question_id"],
+                    # Omit the 'id' field to let the database assign it automatically
+                    "result_id": result_id,  # Integer ID from the result
+                    "question_id": response["question_id"],  # Integer question ID
                     "selected_option": response["selected_option"],
                     "is_correct": response["is_correct"],
                     "created_at": datetime.now().isoformat()
                 }
                 supabase.table("user_question_responses").insert(response_data).execute()
             
+            # Add the ID to the result data after insertion
+            result_data["id"] = result_id
+            
             # Create and return exam result with responses
             result = ExamResult.from_dict(result_data, question_responses=question_responses)
-            result.exam_name = exam_data["exam_name"]  # Add exam name to the result
+            result.exam_name = exam_data.get("exam_name", "Unknown Exam")
             
             return result
             
+        except ValueError as ve:
+            # Handle conversion errors (e.g., non-integer IDs)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid ID format. IDs must be integers: {str(ve)}"
+            )
         except Exception as e:
             if isinstance(e, HTTPException):
                 raise e
