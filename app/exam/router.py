@@ -15,11 +15,22 @@ from datetime import datetime, timedelta
 router = APIRouter(prefix="/exams", tags=["Exams"])
 
 # Helper function to convert UTC to IST
-def convert_to_ist(utc_datetime):
-    if not utc_datetime:
-        return utc_datetime
-    # IST is UTC+5:30
-    return utc_datetime + timedelta(hours=5, minutes=30)
+def convert_to_ist(utc_datetime_str):
+    """Convert UTC datetime string to IST datetime string"""
+    if utc_datetime_str is None:
+        return None
+        
+    # Convert string to datetime object
+    if isinstance(utc_datetime_str, str):
+        utc_datetime = datetime.fromisoformat(utc_datetime_str.replace('Z', '+00:00'))
+    else:
+        utc_datetime = utc_datetime_str
+        
+    # Add 5 hours and 30 minutes to convert to IST
+    ist_datetime = utc_datetime + timedelta(hours=5, minutes=30)
+    
+    # Return as string in the same format
+    return ist_datetime.isoformat()
 
 @router.get("/", response_model=List[ExamResponse])
 async def get_all_exams(current_user: User = Security(get_current_user)):
