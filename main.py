@@ -5,11 +5,12 @@ import uvicorn
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel
 
-# Import auth router correctly
+# Import auth and exam routers
 from app.auth.router import router as auth_router
 from app.auth.dependencies import get_current_user, oauth2_scheme
 from app.auth.models import User
 from app.config import initialize_database
+from app.exam.router import router as exam_router
 
 # Define a request model for the demo endpoint
 class DemoRequest(BaseModel):
@@ -90,6 +91,7 @@ async def demo_post(
 
 # Include routers with appropriate prefixes
 app.include_router(auth_router)
+app.include_router(exam_router)
 app.include_router(public_router)
 app.include_router(protected_router, prefix="/api")
 
