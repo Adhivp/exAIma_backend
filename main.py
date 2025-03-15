@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 # Import auth router correctly
 from app.auth.router import router as auth_router
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_current_user, oauth2_scheme
 from app.auth.models import User
 from app.config import initialize_database
 
@@ -64,7 +64,7 @@ async def health_check() -> Dict[str, str]:
     return {"status": "healthy"}
 
 # Protected endpoints
-@protected_router.post("/demo")
+@protected_router.post("/demo", description="Demo endpoint with authentication required")
 async def demo_post(
     request: DemoRequest, 
     current_user: User = Depends(get_current_user)

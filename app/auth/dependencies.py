@@ -2,45 +2,23 @@ from fastapi import Depends, HTTPException, status, Header
 from typing import Optional
 from app.auth.services import AuthService
 from app.auth.models import User
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm, HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security.api_key import APIKeyHeader
 
+# Define the OAuth2 scheme for Swagger UI - this creates the lock icon
+oauth2_scheme = HTTPBearer()
 
-async def get_token_from_header(authorization: Optional[str] = Header(None)) -> str:
+async def get_token_from_header(credentials: HTTPAuthorizationCredentials = Depends(oauth2_scheme)) -> str:
     """
-    Extract JWT token from the Authorization header
+    Extract JWT token from the Authorization header using FastAPI's security utilities
     
     Args:
-        authorization: Authorization header value
+        credentials: The credentials extracted by the HTTPBearer scheme
         
     Returns:
         str: The JWT token
-        
-    Raises:
-        HTTPException: If authorization header is missing or invalid
     """
-    if not authorization:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authorization header is missing",
-            headers={"WWW-Authenticate": "Bearer"}
-        )
-        
-    scheme, _, token = authorization.partition(" ")
-    
-    if scheme.lower() != "bearer":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication scheme",
-            headers={"WWW-Authenticate": "Bearer"}
-        )
-        
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token is missing",
-            headers={"WWW-Authenticate": "Bearer"}
-        )
-        
-    return token
+    return credentials.credentials
 
 
 async def get_current_user(token: str = Depends(get_token_from_header)) -> User:
