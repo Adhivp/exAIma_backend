@@ -10,9 +10,6 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
-      
     - name: Setup SSH
       uses: webfactory/ssh-agent@v0.8.0
       with:
@@ -32,20 +29,22 @@ jobs:
             kill -9 $PROCESS_PID
           fi
           
-          # Navigate to project directory (create if doesn't exist)
+          # Navigate to project directory (create if needed)
           mkdir -p ~/exAIma_backend
           cd ~/exAIma_backend
           
-          # Clean up existing files
-          rm -rf ./*
-        EOF
-        
-        # Copy project files to VM
-        scp -r ./* ${{ secrets.AZURE_VM_USERNAME }}@${{ secrets.AZURE_VM_HOST }}:~/exAIma_backend/
-        
-        # Setup environment and start application
-        ssh ${{ secrets.AZURE_VM_USERNAME }}@${{ secrets.AZURE_VM_HOST }} << 'EOF'
-          cd ~/exAIma_backend
+          # Check if git repo exists, initialize if not
+          if [ ! -d ".git" ]; then
+            echo "Initializing git repository..."
+            git init
+            git remote add origin https://github.com/adhivp/exAIma_backend.git
+          fi
+          
+          # Clean any local changes and pull latest code
+          echo "Pulling latest changes..."
+          git clean -fd
+          git reset --hard
+          git pull origin main || echo "Failed to pull, continuing anyway"
           
           # Ensure required packages are installed
           echo "Installing required system packages..."
