@@ -335,3 +335,46 @@ async def get_exam_history(
             "message": f"Error retrieving exam history: {str(e)}",
             "exam_id": exam_id
         }
+
+@router.get("/results/{result_id}/analysis", response_model=Dict[str, Any])
+async def get_exam_result_analysis(
+    result_id: str,
+    current_user: User = Security(get_current_user)
+):
+    """
+    Generate an AI-powered analysis of an exam result with personalized recommendations
+    
+    Args:
+        result_id: ID of the exam result to analyze
+        
+    Returns:
+        Detailed analysis report with improvement suggestions
+    """
+    try:
+        # Verify the user has access to this result
+        result_check = supabase.table("user_exam_results").select("user_id").eq("id", result_id).execute()
+        
+        if not result_check.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Result with ID {result_id} not found"
+            )
+        
+        # Verify the result belongs to the current user
+        if str(result_check.data[0]["user_id"]) != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You don't have permission to access this result"
+            )
+        
+        # Generate the analysis report
+        analysis = await ExamService.generate_exam_analysis(result_id)
+        return analysis
+        
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error analyzing exam result: {str(e)}"
+        )
