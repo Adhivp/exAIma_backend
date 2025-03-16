@@ -7,3 +7,4 @@ PyJWT
 pydantic[email]
 python-multipart
 bcrypt
+uvloop
